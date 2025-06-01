@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>课堂选择题系统</title>
+    <style>
+        body {
+            font-family: 'Microsoft Yahei', sans-serif;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 30px;
+        }
+        #main-panel {
+            border-right: 2px solid #eee;
+            padding-right: 30px;
+        }
+        #question-container {
+            min-height: 300px;
+            padding: 20px;
+            border: 2px solid #4CAF50;
+            border-radius: 10px;
+            margin: 20px 0;
+            position: relative;
+        }
+       .options-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin: 20px 0;
+        }
+       .option-btn {
+            padding: 15px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+       .option-btn:hover {
+            background-color: #f0f0f0;
+        }
+       .selected {
+            border-color: #2196F3;
+            background-color: #e3f2fd;
+        }
+       .correct {
+            border-color: #4CAF50!important;
+            background-color: #e8f5e9!important;
+        }
+       .wrong {
+            border-color: #f44336!important;
+            background-color: #ffebee!important;
+        }
+        #score-board {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+        }
+       .answer-panel {
+            margin-top: 15px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+       .answer-header {
+            padding: 12px;
+            background-color: #f8f9fa;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+       .answer-content {
+            max-height: 0;
+            overflow: hidden;
+            padding: 0 15px;
+            transition: max-height 0.3s ease-out;
+        }
+       .answer-content.active {
+            max-height: 500px;
+            padding: 15px;
+        }
+       .arrow {
+            transition: transform 0.3s;
+        }
+       .arrow.active {
+            transform: rotate(180deg);
+        }
+        #history-panel h3 {
+            cursor: pointer;
+            color: #2196F3;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+    <!-- 添加音频元素 -->
+    <audio id="rightAudio" src="right.hrxz.com.mp3"></audio>
+    <audio id="wrongAudio" src="rong.mp3"></audio>
+
+    <div id="main-panel">
+        <h2>课堂选择题系统</h2>
+        <div id="upload-section">
+            <label class="upload-btn">
+                上传题库文件
+                <input type="file" id="file-input" accept=".xlsx,.xls" />
+            </label>
+            <p>（下载<a href="choice_template.xlsx" download>题库模板</a>）</p>
+        </div>
+        <div id="question-container">
+            <div id="score-board">得分：<span id="score">0</span></div>
+            <div id="current-question"></div>
+            <div class="options-grid" id="options-container"></div>
+            <div class="answer-panel" id="answer-panel">
+                <div class="answer-header" onclick="toggleAnswer()">
+                    <span>答案解析</span>
+                    <span class="arrow">▼</span>
+                </div>
+                <div class="answer-content" id="answer-content">
+                    <div>正确答案：<span id="correct-answer"></span></div>
+                    <div class="hint">提示：<span id="hint-content"></span></div>
+                </div>
+            </div>
+        </div>
+        <div id="controls">
+            <button onclick="drawQuestion()" id="drawBtn" disabled>随机抽题</button>
+        </div>
+    </div>
+    <div id="history-panel">
+        <h3 onclick="toggleHistory()">▼ 答题历史</h3>
+        <div id="history-list"></div>
+    </div>
+    <script>
+        let questions = [];
+        let currentQuestion = null;
+        let score = 0;
+        let answeredQuestions = new Set();
+
+        // 获取音频元素
+        const rightAudio = document.getElementById('rightAudio');
+        const wrongAudio = document.getElementById('wrongAudio');
+
+        // Excel文件处理
+        document.getElementById('file-input').addEventListener('change', function (e) {
+            const file = e.target.files[0];
+            if (!file) {
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                    questions = rawData.slice(1).map(row => {
+                        const getTrimmedValue = (index) => {
+                            if (typeof row[index] ==='string') {
+                                return row[index].trim();
+                            }
+                            return row[index]!== undefined? row[index] : '';
+                        };
+
+                        const question = getTrimmedValue(0);
+                        const optionA = getTrimmedValue(1);
+                        const optionB = getTrimmedValue(2);
+                        const optionC = getTrimmedValue(3);
+                        const optionD = getTrimmedValue(4);
+                        const answer = (getTrimmedValue(5) || '').toUpperCase();
+                        const hint = getTrimmedValue(6) || '暂无提示';
+
+                        return {
+                            question,
+                            optionA,
+                            optionB,
+                            optionC,
+                            optionD,
+                            answer,
+                            hint
+                        };
+                    }).filter(q => q.question && /^[A-D]$/.test(q.answer));
+                    if (questions.length === 0) {
+                        throw new Error('题库文件中没有有效的题目，请检查文件内容。');
+                    }
+                    document.getElementById('drawBtn').disabled = false;
+                } catch (error) {
+                    alert(`文件读取失败：${error.message}`);
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        });
+
+        function toggleAnswer() {
+            const content = document.getElementById('answer-content');
+            const arrow = document.querySelector('.arrow');
+            content.classList.toggle('active');
+            arrow.classList.toggle('active');
+        }
+
+        function drawQuestion() {
+            if (answeredQuestions.size >= questions.length) {
+                alert("所有题目已完成！");
+                return;
+            }
+            let availableQuestions = questions.filter((_, index) =>!answeredQuestions.has(index));
+            const randomIndex = Math.floor(Math.random() * availableQuestions.length);
+            currentQuestion = availableQuestions[randomIndex];
+
+            document.getElementById('current-question').innerHTML = `
+                <h3>${currentQuestion.question}</h3>
+            `;
+            const optionsContainer = document.getElementById('options-container');
+            optionsContainer.innerHTML = '';
+            ['A', 'B', 'C', 'D'].forEach(option => {
+                let optionText = currentQuestion[`option${option}`];
+                if (optionText === '') {
+                    optionText = '无';
+                }
+                const btn = document.createElement('div');
+                btn.className = 'option-btn';
+                btn.innerHTML = `
+                    <strong>${option}.</strong> ${optionText}
+                `;
+                btn.dataset.option = option;
+                btn.onclick = () => checkAnswer(option);
+                optionsContainer.appendChild(btn);
+            });
+            // 重置解析面板
+            document.getElementById('answer-content').classList.remove('active');
+            document.querySelector('.arrow').classList.remove('active');
+            document.getElementById('correct-answer').textContent =
+                `${currentQuestion.answer}. ${currentQuestion['option' + currentQuestion.answer]}`;
+            document.getElementById('hint-content').textContent = currentQuestion.hint;
+        }
+
+        function checkAnswer(selectedOption) {
+            if (!currentQuestion) {
+                return;
+            }
+            const options = document.querySelectorAll('.option-btn');
+            options.forEach(opt => {
+                opt.classList.remove('selected', 'correct', 'wrong');
+                if (opt.dataset.option === selectedOption) {
+                    opt.classList.add('selected');
+                }
+                if (opt.dataset.option === currentQuestion.answer) {
+                    opt.classList.add('correct');
+                }
+            });
+            if (selectedOption === currentQuestion.answer) {
+                score += 10;
+                document.getElementById('score').textContent = score;
+                const questionIndex = questions.findIndex(q => q.question === currentQuestion.question);
+                answeredQuestions.add(questionIndex);
+                addHistory(true);
+                // 播放正确音效
+                rightAudio.currentTime = 0;
+                rightAudio.play();
+            } else {
+                addHistory(false);
+                // 播放错误音效
+                wrongAudio.currentTime = 0;
+                wrongAudio.play();
+            }
+        }
+
+        function addHistory(isCorrect) {
+            const historyItem = document.createElement('div');
+            historyItem.className = 'history-item';
+            historyItem.innerHTML = `
+                <div>${currentQuestion.question}</div>
+                <div class="hint">
+                    ${isCorrect? '<span style="color:green">✓ +10分</span>' : '<span style="color:red">✗ 正确答案：' + currentQuestion.answer + '</span>'}
+                </div>
+            `;
+            document.getElementById('history-list').prepend(historyItem);
+        }
+
+        function toggleHistory() {
+            const list = document.getElementById('history-list');
+            list.style.display = list.style.display === 'none'? 'block' : 'none';
+        }
+    </script>
+</body>
+</html>
