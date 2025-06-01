@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>课堂点名系统</title>
+    <style>
+        body {
+            font-family: 'Microsoft Yahei', sans-serif;
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 20px;
+        }
+        #students-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 10px;
+            margin: 20px 0;
+        }
+        .student {
+            padding: 10px;
+            border: 1px solid #ddd;
+            text-align: center;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+        .called {
+            background-color: #e0e0e0;
+            text-decoration: line-through;
+            color: #666;
+        }
+        .highlight {
+            background-color: #ffeb3b !important;
+            transform: scale(1.1);
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:disabled {
+            background-color: #cccccc;
+        }
+        #controls {
+            text-align: center;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <h2>课堂点名系统</h2>
+    
+    <div id="controls">
+        <button onclick="startRoll()" id="startBtn">开始点名</button>
+        <button onclick="resetAll()" id="resetBtn">重新开始</button>
+        <p>剩余未点名：<span id="remaining">0</span></p>
+    </div>
+
+    <div id="students-container"></div>
+
+    <script>
+        // 学生名单（请在此处修改为学生名单）
+        const initialStudents = [
+            "张三", "李四", "王五", "赵六",
+            "陈七", "林八", "黄九", "周十",
+            "吴十一", "郑十二", "刘十三", "蔡十四"
+        ];
+
+        let students = [];
+        let isRolling = false;
+        let rollInterval = null;
+
+        function initializeStudents() {
+            students = initialStudents.map(name => ({
+                name,
+                called: false
+            }));
+            updateDisplay();
+        }
+
+        function updateDisplay() {
+            const container = document.getElementById('students-container');
+            container.innerHTML = '';
+            
+            students.forEach((student, index) => {
+                const div = document.createElement('div');
+                div.className = `student ${student.called ? 'called' : ''}`;
+                div.textContent = student.name;
+                div.onclick = () => toggleCalled(index);
+                container.appendChild(div);
+            });
+
+            document.getElementById('remaining').textContent = 
+                students.filter(s => !s.called).length;
+        }
+
+        function toggleCalled(index) {
+            students[index].called = !students[index].called;
+            updateDisplay();
+        }
+
+        function startRoll() {
+            if (students.filter(s => !s.called).length === 0) return;
+            
+            isRolling = !isRolling;
+            document.getElementById('startBtn').textContent = 
+                isRolling ? '停止点名' : '开始点名';
+
+            if (isRolling) {
+                rollInterval = setInterval(highlightRandom, 50);
+            } else {
+                clearInterval(rollInterval);
+                markCalled();
+            }
+        }
+
+        function highlightRandom() {
+            const available = students.filter(s => !s.called);
+            if (available.length === 0) return;
+
+            const randomIndex = Math.floor(Math.random() * available.length);
+            const selectedName = available[randomIndex].name;
+            
+            // 移除之前的高亮
+            document.querySelectorAll('.student').forEach(div => {
+                div.classList.remove('highlight');
+            });
+
+            // 添加新高亮
+            const targetDiv = [...document.querySelectorAll('.student')]
+                .find(div => div.textContent === selectedName);
+            if (targetDiv) targetDiv.classList.add('highlight');
+        }
+
+        function markCalled() {
+            const highlighted = document.querySelector('.highlight');
+            if (highlighted) {
+                const name = highlighted.textContent;
+                const index = students.findIndex(s => s.name === name);
+                if (index !== -1) students[index].called = true;
+            }
+            updateDisplay();
+        }
+
+        function resetAll() {
+            students.forEach(s => s.called = false);
+            updateDisplay();
+            if (isRolling) startRoll(); // 如果正在滚动则停止
+        }
+
+        // 初始化
+        initializeStudents();
+    </script>
+</body>
+</html>

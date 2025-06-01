@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Excel版课堂点名系统</title>
+    <style>
+        /* 原有样式保持不变 */
+        body { font-family: 'Microsoft Yahei', sans-serif; max-width: 800px; margin: 20px auto; padding: 20px; }
+        #students-container { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; margin: 20px 0; }
+        .student { padding: 10px; border: 1px solid #ddd; text-align: center; transition: all 0.3s; cursor: pointer; }
+        .called { background-color: #e0e0e0; text-decoration: line-through; color: #666; }
+        .highlight { background-color: #ffeb3b !important; transform: scale(1.1); }
+        button { padding: 10px 20px; margin: 5px; background-color: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:disabled { background-color: #cccccc; }
+        #controls { text-align: center; margin: 20px 0; }
+        /* 新增上传区域样式 */
+        #upload-section { margin: 20px 0; text-align: center; }
+        #file-input { display: none; }
+        .upload-btn {
+            padding: 10px 20px;
+            background-color: #2196F3;
+            color: white;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+    <h2>Excel版课堂点名系统</h2>
+
+    <div id="upload-section">
+        <label class="upload-btn">
+            点击上传学生名单
+            <input type="file" id="file-input" accept=".xlsx, .xls" />
+        </label>
+        <p>（请使用<a href="student_template.xlsx" download>模板文件</a>）</p>
+    </div>
+
+    <div id="controls">
+        <button onclick="startRoll()" id="startBtn" disabled>开始点名</button>
+        <button onclick="resetAll()" id="resetBtn" disabled>重新开始</button>
+        <p>剩余未点名：<span id="remaining">0</span></p>
+    </div>
+
+    <div id="students-container"></div>
+
+    <script>
+        let students = [];
+        let isRolling = false;
+        let rollInterval = null;
+
+        // 处理Excel文件上传
+        document.getElementById('file-input').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                
+                // 读取第一个工作表的A列数据（假设姓名在A列）
+                const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                const studentsData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                
+                // 过滤空值并初始化学生列表
+                students = studentsData
+                    .slice(1) // 跳过标题行
+                    .filter(row => row[0] && row[0].trim())
+                    .map(name => ({
+                        name: name[0].trim(),
+                        called: false
+                    }));
+
+                // 启用按钮
+                document.getElementById('startBtn').disabled = false;
+                document.getElementById('resetBtn').disabled = false;
+                
+                updateDisplay();
+            };
+            reader.readAsArrayBuffer(file);
+        });
+
+        // 以下函数保持不变（仅修改initializeStudents函数）
+        function updateDisplay() {
+            const container = document.getElementById('students-container');
+            container.innerHTML = '';
+            
+            students.forEach((student, index) => {
+                const div = document.createElement('div');
+                div.className = `student ${student.called ? 'called' : ''}`;
+                div.textContent = student.name;
+                div.onclick = () => toggleCalled(index);
+                container.appendChild(div);
+            });
+
+            document.getElementById('remaining').textContent = 
+                students.filter(s => !s.called).length;
+        }
+
+        function toggleCalled(index) {
+            students[index].called = !students[index].called;
+            updateDisplay();
+        }
+
+        function startRoll() {
+            if (students.filter(s => !s.called).length === 0) return;
+            
+            isRolling = !isRolling;
+            document.getElementById('startBtn').textContent = 
+                isRolling ? '停止点名' : '开始点名';
+
+            if (isRolling) {
+                rollInterval = setInterval(highlightRandom, 50);
+            } else {
+                clearInterval(rollInterval);
+                markCalled();
+            }
+        }
+
+        function highlightRandom() {
+            const available = students.filter(s => !s.called);
+            if (available.length === 0) return;
+
+            const randomIndex = Math.floor(Math.random() * available.length);
+            const selectedName = available[randomIndex].name;
+            
+            document.querySelectorAll('.student').forEach(div => {
+                div.classList.remove('highlight');
+            });
+
+            const targetDiv = [...document.querySelectorAll('.student')]
+                .find(div => div.textContent === selectedName);
+            if (targetDiv) targetDiv.classList.add('highlight');
+        }
+
+        function markCalled() {
+            const highlighted = document.querySelector('.highlight');
+            if (highlighted) {
+                const name = highlighted.textContent;
+                const index = students.findIndex(s => s.name === name);
+                if (index !== -1) students[index].called = true;
+            }
+            updateDisplay();
+        }
+
+        function resetAll() {
+            students.forEach(s => s.called = false);
+            updateDisplay();
+            if (isRolling) startRoll();
+        }
+    </script>
+</body>
+</html>
